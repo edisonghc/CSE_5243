@@ -104,6 +104,7 @@ def construct_vocab(files):
     return vocab
 
 def extract_feature(files, vocab, label2id = 0):
+    ps = nltk.stem.PorterStemmer()
     # Since we have truncated the vocabulary, it's now reasonable to hold the entire feature        matrix in memory (it takes about 3.6GB on a 64-bit machine). If memory is an issue, you         could make the vocabulary even smaller or use sparse matrix.
     start_time = time.time()
     features = np.zeros((len(files), len(vocab)), dtype=int)
