@@ -1,6 +1,11 @@
 import nltk
-nltk.download('punkt')  # needed by word_tokenize
-nltk.download('stopwords')
+# nltk.download()
+from nltk.tokenize import word_tokenize
+from nltk.stem.porter import PorterStemmer
+from nltk.corpus import stopwords as sw
+STOP_WORDS = set(sw.words('english')) 
+
+import string
 import copy
 import os
 import sys
@@ -9,14 +14,10 @@ import time
 import numpy as np
 from random import seed
 from random import randrange
-from nltk.stem import PorterStemmer as ps
-from nltk.corpus import stopwords as sw
-STOP_WORDS = set(sw.words('english')) 
 
-from nltk.tokenize import word_tokenize
 
 # Split a dataset into k folds
-def cross_validation_split(dataset, n_folds):
+def cross_validation_split(dataset, n_folds): 
     dataset_split = list()
     dataset_copy = list(dataset)
     fold_size = int(len(dataset) / n_folds)
@@ -28,15 +29,27 @@ def cross_validation_split(dataset, n_folds):
         dataset_split.append(fold)
     return dataset_split
 
+
 # Stratified cross-validation split
 def stratified_datasplit(root_path):
+    print(f'|   Starting stratified_datasplit')
+    start_time = time.time()
+
     # Only keep the data dictionaries and ignore possible system files like .DS_Store
     folders = [os.path.join(root_path, name) for name in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, name))]
     folds = [[] for i in range(N_FOLDS)]
+    i = 0
     for folder in folders:
+        print(f'|   |   {i+1}) Splitting data from {folder}')
         files = [os.path.join(folder, filename) for filename in os.listdir(folder)]
         folds = np.column_stack((cross_validation_split(files, N_FOLDS),folds))
+        i += 1
+    
+    elapsed_time = time.time() - start_time
+    print(f'|   stratified_datasplit took {elapsed_time:.2f} seconds')
+    print()
     return folds
+
 
 # Calculate accuracy percentage
 def accuracy_metric(actual, predicted):
@@ -46,72 +59,109 @@ def accuracy_metric(actual, predicted):
             correct += 1
     return correct / float(len(actual)) * 100.0
 
+
 # Evaluate an algorithm using a cross validation split
 def evaluate_algorithm(root_path, algorithm, *args):
+    print(f'Evaluating {algorithm.__name__}')
+    start_time = time.time()
+
     folds = stratified_datasplit(root_path)
     scores = list()
-    build_time = list()
-    predict_time = list()
+    count_cv = 0
     for i in range(len(folds)):
+
+        # A switch to run the algorithm just once for efficiency
+        if i > 0:
+            continue
+
+        print(f'|   {i+1}th iteration')
         train_set = list()
         for j in range(len(folds)):
             if not i == j:
                 train_set = np.append(train_set, copy.deepcopy(folds[j]))
-        train_vocab = construct_vocab(train_set)
+        print(f'|   |   Building feature matrix on training data')
+        train_vocab = construct_vocab(train_set,count_cv)
+        count_cv += 1
         train_data, label2id = extract_feature(train_set, train_vocab)
-
+        print()
         test_set = list(folds[i])
+        print(f'|   |   Building feature matrix on testing data')
         test_data_with_label, _ = extract_feature(test_set, train_vocab, label2id)
         test_data_no_label = test_data_with_label[:,:-1]
-
-        predicted, build_t, predict_t = algorithm(train_data, test_data_no_label, *args)
+        print()
+        print(f'|   |   Running {algorithm.__name__}')
+        predicted = algorithm(train_data, test_data_no_label, *args)
+        print()
+        print(f'|   |   Caculating the accuracy')
         actual = [row[-1] for row in test_data_with_label]
         accuracy = accuracy_metric(actual, predicted)
+        print(f'|   |   Accuracy is {accuracy}%')
         scores.append(accuracy)
-        build_time.append(build_t)
-        predict_time.append(predict_t)
-    return scores, build_time, predict_time
+        print()
+    elapsed_time = time.time() - start_time
+    print(f'Evaluating {algorithm.__name__} took {elapsed_time/60:.2f} minutes')
+    print()
+    return scores
+
 
 # Vocabulary Construction
-def construct_vocab(files):
-    ps = nltk.stem.PorterStemmer()
+def construct_vocab(files,count_cv):
+    print(f'|   |   |   Constructing vocabulary')
     start_time = time.time()
+
     vocab_full = {}
     n_doc = 0
     for file in files:
         n_doc += 1
         with open(file, 'r', encoding='utf8', errors='ignore') as f:
             for line in f:
+                # split into words
                 tokens = word_tokenize(line)
-                filtered_tokens = [w for w in tokens if not w in STOP_WORDS]
-                for token in filtered_tokens:
-                    root_word = ps.stem(token)
-                    vocab_full[root_word] = vocab_full.get(root_word, 0) + 1
-    print(f'{n_doc} documents in total with a total vocab size of {len(vocab_full)}')
+                # convert to lower case
+                tokens = [w.lower() for w in tokens]
+                # remove punctuation from each word
+                table = str.maketrans('', '', string.punctuation)
+                stripped = [w.translate(table) for w in tokens]
+                # remove remaining tokens that are not alphabetic
+                words = [word for word in stripped if word.isalpha()]
+                # filter out stop words
+                words = [w for w in words if not w in STOP_WORDS]
+                # stemming of words
+                porter = PorterStemmer()
+                stemmed = [porter.stem(word) for word in words]
+                for token in stemmed:
+                    vocab_full[token] = vocab_full.get(token, 0) + 1
+    print(f'|   |   |   |   {n_doc} documents scaned')
+    print(f'|   |   |   |   Full vocabulary has {len(vocab_full)} words')
     vocab_sorted = sorted(vocab_full.items(), key=operator.itemgetter(1), reverse=True)
     ideal_vocab_size = min(len(vocab_sorted),MAX_VOCAB_SIZE)
     vocab_truncated = vocab_sorted[:ideal_vocab_size]
     # Save the vocabulary to file for visual inspection and possible analysis
-    with open('vocab.txt', 'w') as f:
+    with open(f'vocab_{count_cv+1}.txt', 'w') as f:
         for vocab, freq in vocab_truncated:
             f.write(f'{vocab}\t{freq}\n')
-    # The final vocabulary is a dict mapping each token to its id. frequency information is not     needed anymore.
+    # The final vocabulary is a dict mapping each token to its id. frequency information is not needed anymore.
     vocab = dict([(token, id) for id, (token, _) in enumerate(vocab_truncated)])
-    # Since we have truncated the vocabulary, we will encounter many tokens that are not in the     vocabulary. We will map all of them to the same 'UNK' token (a common practice in text          processing), so we append it to the end of the vocabulary.
+    # Since we have truncated the vocabulary, we will encounter many tokens that are not in the vocabulary. We will map all of them to the same 'UNK' token (a common practice in text processing), so we append it to the end of the vocabulary.
     vocab['UNK'] = ideal_vocab_size
+
+    print(f'|   |   |   |   Truncated vocabulary has {len(vocab)} words')
     elapsed_time = time.time() - start_time
-    print(f'Vocabulary construction took {elapsed_time} seconds')
+    print(f'|   |   |   Constructing vocabulary took {elapsed_time/60:.2f} minutes')
     return vocab
 
+
 def extract_feature(files, vocab, label2id = 0):
-    ps = nltk.stem.PorterStemmer()
-    # Since we have truncated the vocabulary, it's now reasonable to hold the entire feature        matrix in memory (it takes about 3.6GB on a 64-bit machine). If memory is an issue, you         could make the vocabulary even smaller or use sparse matrix.
+    print(f'|   |   |   Extracting feature')
     start_time = time.time()
+
+    # Since we have truncated the vocabulary, it's now reasonable to hold the entire feature matrix in memory (it takes about 3.6GB on a 64-bit machine). If memory is an issue, you could make the vocabulary even smaller or use sparse matrix.
     features = np.zeros((len(files), len(vocab)), dtype=int)
-    print(f'The feature matrix takes {sys.getsizeof(features)} Bytes.')
+    print(f'|   |   |   |   Feature matrix takes {sys.getsizeof(features)/1000000:.4f} Mb')
+
     # The class label of each document
     labels = np.zeros(len(files), dtype=int)
-    # The mapping from the name of each class label (i.e., the subdictionary name corresponding     to a topic) to an integer ID
+    # The mapping from the name of each class label (i.e., the subdictionary name corresponding to a topic) to an integer ID
     doc_id = 0
     if label2id == 0:
         folders = list(set(os.path.dirname(file) for file in files))
@@ -121,21 +171,32 @@ def extract_feature(files, vocab, label2id = 0):
         labels[doc_id] = label2id[label]
         with open(file, 'r', encoding='utf8', errors='ignore') as f:
             for line in f:
+                # split into words
                 tokens = word_tokenize(line)
-                filtered_tokens = [w for w in tokens if not w in STOP_WORDS]
-                for token in filtered_tokens:
-                    # if the current token is in the vocabulary, get its ID; otherwise, get                         the ID of the UNK token
-                    root_word = ps.stem(token)
+                # convert to lower case
+                tokens = [w.lower() for w in tokens]
+                # remove punctuation from each word
+                table = str.maketrans('', '', string.punctuation)
+                stripped = [w.translate(table) for w in tokens]
+                # remove remaining tokens that are not alphabetic
+                words = [word for word in stripped if word.isalpha()]
+                # filter out stop words
+                words = [w for w in words if not w in STOP_WORDS]
+                # stemming of words
+                porter = PorterStemmer()
+                stemmed = [porter.stem(word) for word in words]
+                for token in stemmed:
+                    # if the current token is in the vocabulary, get its ID; otherwise, get the ID of the UNK token
                     unk_id = len(vocab) - 1
-                    token_id = vocab.get(root_word, unk_id)
+                    token_id = vocab.get(token, unk_id)
                     features[doc_id, token_id] += 1
         doc_id += 1
-    elapsed_time = time.time() - start_time
-    print(f'Feature extraction took {elapsed_time} seconds')
-    print(features.shape)
-    print(labels.shape)
+
     # id2label = dict([(id, label) for label, id in label2id.items()])
     dataset = np.column_stack((features, labels))
+    print(f'|   |   |   |   Dataset has dimension {dataset.shape}')
+    elapsed_time = time.time() - start_time
+    print(f'|   |   |   Extracting feature took {elapsed_time/60:.2f} minutes')
     return dataset, label2id
 
 # Split a dataset based on an attribute and an attribute value
@@ -161,8 +222,9 @@ def gini_index(groups, classes):
             continue
         score = 0.0
         # score the group based on the score for each class
+        tmp = [row[-1] for row in group]
         for class_val in classes:
-            p = [row[-1] for row in group].count(class_val) / size
+            p = tmp.count(class_val) / size
             score += p * p
         # weight the group score by its relative size
         gini += (1.0 - score) * (size / n_instances)
@@ -170,45 +232,90 @@ def gini_index(groups, classes):
 
 # Select the best split point for a dataset
 def get_split(dataset):
+    start_time = time.time()
+    print(f'|   |   |   |   Finding a split')
+    # Switch
     class_values = list(set(row[-1] for row in dataset))
     b_index, b_value, b_score, b_groups = 999, 999, 999, None
     for index in range(len(dataset[0])-1):
-        for row in dataset:
-            groups = test_split(index, row[index], dataset)
+        iteration_start_time = time.time()
+        # print(f'|   |   |   |   |   {index+1}th attribute')
+        left = list()
+        tmp = [[row[index],row[-1]] for row in list(dataset)]
+        right = sorted(tmp, key = operator.itemgetter(0), reverse = True)
+        i = 0
+        updated = False
+        for j in range(len(right)):
+            groups = left, right
             gini = gini_index(groups, class_values)
             if gini < b_score:
-                b_index, b_value, b_score, b_groups = index, row[index], gini, groups
+                b_index, b_value, b_score = index, right[0][-1], gini
+                updated = True
+                b_i = i
+            left.append(right.pop())
+            i += 1
+        iteration_time = time.time() - iteration_start_time
+        # print(f'|   |   |   |   |   |   Spent {iteration_time:.0f} seconds')
+        # print(f"|   |   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute{(' '+str(b_i)+'th row') if updated else ', did not change'}")
+    b_groups = test_split(b_index,b_value,dataset)
+
+    elapsed_time = time.time() - start_time
+    print(f'|   |   |   |   Finding a split took {elapsed_time/60:.2f} minutes')
     return {'index':b_index, 'value':b_value, 'groups':b_groups}
 
 # Create a terminal node value
 def to_terminal(group):
     outcomes = [row[-1] for row in group]
-    return max(set(outcomes), key=outcomes.count)
+    tmp = [max(set(outcomes), key=outcomes.count)]
+    predicted = tmp * len(group)
+    accuracy = accuracy_metric(outcomes, predicted)
+    return [max(set(outcomes), key=outcomes.count), accuracy, len(group)]
 
 # Create child splits for a node or make terminal
 def split(node, max_depth, min_size, depth):
+    print(f"|   |   |   |   {depth*' : '}[X{node['index']+1} < {node['value']}]") 
     left, right = node['groups']
+    grouped = left + right
+    root_cv = list(set(row[-1] for row in grouped))
+    split_gini = gini_index(node['groups'], root_cv)
+    root_gini = gini_index((grouped,[]), root_cv) 
     del(node['groups'])
+    # Prunning
+    if root_gini <= split_gini:
+        node['left'] = node['right'] = to_terminal(left + right)
+        return True
     # check for a no split
     if not left or not right:
         node['left'] = node['right'] = to_terminal(left + right)
-        return
+        return True
     # check for max depth
     if depth >= max_depth:
-        node['left'], node['right'] = to_terminal(left), to_terminal(right)
-        return
+        node['left'] = to_terminal(left)
+        node['right'] = to_terminal(right)
+        return False
     # process left child
+    single = False
     if len(left) <= min_size:
         node['left'] = to_terminal(left)
     else:
         node['left'] = get_split(left)
-        split(node['left'], max_depth, min_size, depth+1)
+        if node['left']['value'] == 0:
+            node['left'] = to_terminal(left)
+        else:
+            single = split(node['left'], max_depth, min_size, depth+1)
+            if single:
+                node['left'] = to_terminal(left)
     # process right child
     if len(right) <= min_size:
         node['right'] = to_terminal(right)
     else:
         node['right'] = get_split(right)
-        split(node['right'], max_depth, min_size, depth+1)
+        if node['right']['value'] == 0:
+            node['right'] = to_terminal(right)
+        else:
+            single = split(node['right'], max_depth, min_size, depth+1)
+            if single:
+                node['right'] = to_terminal(right)
 
 # Build a decision tree
 def build_tree(train, max_depth, min_size):
@@ -219,11 +326,12 @@ def build_tree(train, max_depth, min_size):
 # Print a decision tree
 def print_tree(node, depth=0):
     if isinstance(node, dict):
-        print('%s[X%d < %.3f]' % ((depth*' ', (node['index']+1), node['value'])))
+        
+        print(f"{depth*'  :  '}[X{node['index']+1} < {node['value']}]")
         print_tree(node['left'], depth+1)
         print_tree(node['right'], depth+1)
     else:
-        print('%s[%s]' % ((depth*' ', node)))
+        print(f"{depth*'  :  '}[{node[0]}] ... {node[1]:.2f}% of {node[2]} rows")
 
 # Make a prediction with a decision tree
 def predict(node, row):
@@ -231,36 +339,43 @@ def predict(node, row):
         if isinstance(node['left'], dict):
             return predict(node['left'], row)
         else:
-            return node['left']
+            return node['left'][0]
     else:
         if isinstance(node['right'], dict):
             return predict(node['right'], row)
         else:
-            return node['right']
+            return node['right'][0]
  
 # Classification and Regression Tree Algorithm
 def decision_tree(train, test, max_depth, min_size):
     start_time = time.time()
+    print(f'|   |   |   Building Decision Tree')
     tree = build_tree(train, max_depth, min_size)
     build_time = time.time() - start_time
-
+    print(f'|   |   |   Building Decision Tree took {build_time/3600:.4f} hours')
+    print()
     print_tree(tree)
-
+    print()
     start_time = time.time()
+    print(f'|   |   |   Making predictions')
     predictions = list()
     for row in test:
         prediction = predict(tree, row)
         predictions.append(prediction)
     predict_time = time.time() - start_time
-    return predictions, build_time, predict_time
+    print(f'|   |   |   Making predictions took {predict_time:.2f} seconds')
+    return predictions
 
+run_start_time = time.time()
 
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 10 #40000
+MAX_VOCAB_SIZE = 9 #250 #40000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 5
-MIN_SIZE = 10
+MAX_DEPTH = 10 #40
+MIN_SIZE = 30
+
+CV = [n for n in range(20)]
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
 root_path = "./20news-train"
@@ -269,9 +384,11 @@ root_path = "./20news-train"
 seed(1)
 # evaluate algorithm
 
-scores, build_time, predict_time = evaluate_algorithm(root_path, decision_tree, MAX_DEPTH, MIN_SIZE)
+scores= evaluate_algorithm(root_path, decision_tree, MAX_DEPTH, MIN_SIZE)
 
-print('Scores: %s' % scores)
+print("Scores:", *(f"{s:.3f}%" for s in scores))
 print('Mean Accuracy: %.3f%%' % (sum(scores)/float(len(scores))))
-print(build_time)
-print(predict_time)
+print()
+run_time = time.time() - run_start_time
+print(f'The program ran for {run_time/60:.2f} minutes')
+print('Done!')
