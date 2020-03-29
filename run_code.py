@@ -95,7 +95,7 @@ def evaluate_algorithm(root_path, algorithm, *args):
         print(f'|   |   Caculating the accuracy')
         actual = [row[-1] for row in test_data_with_label]
         accuracy = accuracy_metric(actual, predicted)
-        print(f'|   |   Accuracy is {accuracy}%')
+        print(f'|   |   Accuracy is {accuracy:.2f}%')
         scores.append(accuracy)
         print()
     elapsed_time = time.time() - start_time
