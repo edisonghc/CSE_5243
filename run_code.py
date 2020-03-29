@@ -320,13 +320,18 @@ def split(node, max_depth, min_size, depth):
 # Build a decision tree
 def build_tree(train, max_depth, min_size):
     root = get_split(train)
-    split(root, max_depth, min_size, 1)
+    single = False
+    if root['value'] == 0:
+        root = to_terminal(train)
+    else:
+        single = split(root, max_depth, min_size, 1)
+        if single:
+            root = to_terminal(train)
     return root
 
 # Print a decision tree
 def print_tree(node, depth=0):
     if isinstance(node, dict):
-        
         print(f"{depth*'  :  '}[X{node['index']+1} < {node['value']}]")
         print_tree(node['left'], depth+1)
         print_tree(node['right'], depth+1)
@@ -335,16 +340,19 @@ def print_tree(node, depth=0):
 
 # Make a prediction with a decision tree
 def predict(node, row):
-    if row[node['index']] < node['value']:
-        if isinstance(node['left'], dict):
-            return predict(node['left'], row)
+    if not isinstance(node, dict):
+        return node[0]
+    else: 
+        if row[node['index']] < node['value']:
+            if isinstance(node['left'], dict):
+                return predict(node['left'], row)
+            else:
+                return node['left'][0]
         else:
-            return node['left'][0]
-    else:
-        if isinstance(node['right'], dict):
-            return predict(node['right'], row)
-        else:
-            return node['right'][0]
+            if isinstance(node['right'], dict):
+                return predict(node['right'], row)
+            else:
+                return node['right'][0]
  
 # Classification and Regression Tree Algorithm
 def decision_tree(train, test, max_depth, min_size):
@@ -369,7 +377,7 @@ def decision_tree(train, test, max_depth, min_size):
 run_start_time = time.time()
 
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 9 #250 #40000
+MAX_VOCAB_SIZE = 19 #250 #40000
 N_FOLDS = 5 #10
 
 MAX_DEPTH = 10 #40
@@ -378,7 +386,7 @@ MIN_SIZE = 30
 CV = [n for n in range(20)]
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
-root_path = "./20news-train"
+root_path = "./20news-train-mini" # "./20news-train"
 
 # Test CART on Bank Note dataset
 seed(1)
