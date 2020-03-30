@@ -71,8 +71,8 @@ def evaluate_algorithm(root_path, algorithm, *args):
     for i in range(len(folds)):
 
         # A switch to run the algorithm just once for efficiency
-        # if i > 0:
-        #     continue
+        if i > 0:
+            continue
 
         print(f'|   {i+1}th iteration')
         train_set = list()
@@ -421,11 +421,11 @@ def decision_tree(train, test, max_depth, min_size):
 
 run_start_time = time.time()
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 5000 #40000
+MAX_VOCAB_SIZE = 40000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 50000
-MIN_SIZE = 50
+MAX_DEPTH = 400000
+MIN_SIZE = 20
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
 root_path = "./20news-train"
