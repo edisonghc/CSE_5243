@@ -234,7 +234,6 @@ def gini_index(groups, classes):
 def get_split(dataset):
     start_time = time.time()
     print(f'|   |   |   |   Finding a split')
-    # Switch
     class_values = list(set(row[-1] for row in dataset))
     b_index, b_value, b_score, b_groups = 999, 999, 999, None
     for index in range(len(dataset[0])-1):
@@ -245,18 +244,20 @@ def get_split(dataset):
         right = sorted(tmp, key = operator.itemgetter(0), reverse = True)
         i = 0
         updated = False
-        for j in range(len(right)):
+        length = len(right)
+        for j in range(length):
             groups = left, right
             gini = gini_index(groups, class_values)
             if gini < b_score:
-                b_index, b_value, b_score = index, right[0][-1], gini
+                b_index, b_value, b_score = index, right[-1][-1], gini
                 updated = True
                 b_i = i
             left.append(right.pop())
             i += 1
         iteration_time = time.time() - iteration_start_time
-        # print(f'|   |   |   |   |   |   Spent {iteration_time:.0f} seconds')
-        # print(f"|   |   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute{(' '+str(b_i)+'th row') if updated else ', did not change'}")
+        if updated:
+            print(f"|   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute {str(b_i)}th row")
+        # print(f"|   |   |   |   |   |   Spent {iteration_time:.0f} seconds, Best Gini = {b_score:.6f} at {index+1}th attribute{(' '+str(b_i)+'th row') if updated else ', did not change'}")
     b_groups = test_split(b_index,b_value,dataset)
 
     elapsed_time = time.time() - start_time
@@ -273,49 +274,54 @@ def to_terminal(group):
 
 # Create child splits for a node or make terminal
 def split(node, max_depth, min_size, depth):
-    print(f"|   |   |   |   {depth*' : '}[X{node['index']+1} < {node['value']}]") 
+    print(f"{(depth-1)*'  :  '}[X{node['index']+1} < {node['value']}]") 
     left, right = node['groups']
-    grouped = left + right
-    root_cv = list(set(row[-1] for row in grouped))
-    split_gini = gini_index(node['groups'], root_cv)
-    root_gini = gini_index((grouped,[]), root_cv) 
     del(node['groups'])
-    # Prunning
-    if root_gini <= split_gini:
-        node['left'] = node['right'] = to_terminal(left + right)
-        return True
     # check for a no split
     if not left or not right:
         node['left'] = node['right'] = to_terminal(left + right)
+        print(f"{depth*'  :  '}single root ... [{node['left']}]")
         return True
     # check for max depth
     if depth >= max_depth:
         node['left'] = to_terminal(left)
+        print(f"{depth*'  :  '}max_depth ... [{node['left']}]")
         node['right'] = to_terminal(right)
+        print(f"{depth*'  :  '}max_depth ... [{node['right']}]")
         return False
     # process left child
     single = False
     if len(left) <= min_size:
         node['left'] = to_terminal(left)
+        print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
     else:
         node['left'] = get_split(left)
         if node['left']['value'] == 0:
             node['left'] = to_terminal(left)
+            print(f"{depth*'  :  '}no good split on left ... [{node['left']}]")
         else:
             single = split(node['left'], max_depth, min_size, depth+1)
             if single:
                 node['left'] = to_terminal(left)
+                print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
+            else:
+                print(f"{(depth+1)*'  :  '}continue from left")
     # process right child
     if len(right) <= min_size:
         node['right'] = to_terminal(right)
+        print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
     else:
         node['right'] = get_split(right)
         if node['right']['value'] == 0:
             node['right'] = to_terminal(right)
+            print(f"{depth*'  :  '}no good split on right ... [{node['right']}]")
         else:
             single = split(node['right'], max_depth, min_size, depth+1)
             if single:
                 node['right'] = to_terminal(right)
+                print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+            else:
+                print(f"{(depth+1)*'  :  '}continue from right")
 
 # Build a decision tree
 def build_tree(train, max_depth, min_size):
@@ -377,16 +383,14 @@ def decision_tree(train, test, max_depth, min_size):
 run_start_time = time.time()
 
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 19 #250 #40000
+MAX_VOCAB_SIZE = 500 #40000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 10 #40
-MIN_SIZE = 30
-
-CV = [n for n in range(20)]
+MAX_DEPTH = 40
+MIN_SIZE = 20
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
-root_path = "./20news-train-mini" # "./20news-train"
+root_path = "./20news-train-mini"
 
 # Test CART on Bank Note dataset
 seed(1)
