@@ -266,7 +266,7 @@ def get_split(dataset):
     b_groups = test_split(b_index,b_value,dataset)
 
     elapsed_time = time.time() - start_time
-    print(f'|   |   |   |   Finding a split took {elapsed_time/60:.2f} minutes')
+    print(f'|   |   |   |   Finding a split took {elapsed_time:.2f} seconds')
     return {'index':b_index, 'value':b_value, 'groups':b_groups}
 
 
@@ -304,9 +304,11 @@ def split(node, max_depth, min_size, depth):
             return False
     
     # process left child
+    min_left = False
     single_left = False
     if len(left) <= min_size:
         node['left'] = to_terminal(left)
+        min_left = True
         # print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
     else:
         node['left'] = get_split(left)
@@ -316,9 +318,11 @@ def split(node, max_depth, min_size, depth):
             # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
     
     # process right child
+    min_right = False
     single_right = False
     if len(right) <= min_size:
         node['right'] = to_terminal(right)
+        min_right = True
         # print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
     else:
         node['right'] = get_split(right)
@@ -327,7 +331,7 @@ def split(node, max_depth, min_size, depth):
             node['right'] = to_terminal(right)
             # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
     
-    if single_left and single_right and node['left'][0] == node['right'][0]:
+    if ((single_left and single_right) or (min_left and min_right)) and node['left'][0] == node['right'][0]:
         node['left'] = node['right'] = to_terminal(left + right)
         return True
     else:
