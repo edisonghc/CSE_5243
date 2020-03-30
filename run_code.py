@@ -71,8 +71,8 @@ def evaluate_algorithm(root_path, algorithm, *args):
     for i in range(len(folds)):
 
         # A switch to run the algorithm just once for efficiency
-        if i > 0:
-            continue
+        # if i > 0:
+        #     continue
 
         print(f'|   {i+1}th iteration')
         train_set = list()
@@ -260,14 +260,15 @@ def get_split(dataset):
             while (len(right) > 0) and (right[-1][0] == left[-1][0]) :
                 left.append(right.pop())
         iteration_time = time.time() - iteration_start_time
-        if updated:
-            print(f"|   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute {str(b_i)}th row")
+        ## if updated:
+            ## print(f"|   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute {str(b_i)}th row")
         # print(f"|   |   |   |   |   |   Spent {iteration_time:.0f} seconds, Best Gini = {b_score:.6f} at {index+1}th attribute{(' '+str(b_i)+'th row') if updated else ', did not change'}")
     b_groups = test_split(b_index,b_value,dataset)
-
+    n_rows = [len(group) for group in b_groups]
+    acc = to_terminal(dataset)
     elapsed_time = time.time() - start_time
     print(f'|   |   |   |   Finding a split took {elapsed_time:.2f} seconds')
-    return {'index':b_index, 'value':b_value, 'groups':b_groups}
+    return {'index':b_index, 'value':b_value, 'groups':b_groups, 'left_rows': n_rows[0], 'right_rows': n_rows[1], 'accuracy': acc}
 
 
 # Create a terminal node value
@@ -276,12 +277,12 @@ def to_terminal(group):
     tmp = [max(set(outcomes), key=outcomes.count)]
     predicted = tmp * len(group)
     accuracy = accuracy_metric(outcomes, predicted)
-    return [max(set(outcomes), key=outcomes.count), accuracy, len(group)]
+    return [tmp[0], accuracy, len(group)]
 
 
 # Create child splits for a node or make terminal
 def split(node, max_depth, min_size, depth):
-    print(f"{(depth-1)*'  :  '}[X{node['index']+1} < {node['value']}]") 
+    # print(f"{(depth-1)*'  :  '}[X{node['index']+1} < {node['value']}]") 
     left, right = node['groups']
     del(node['groups'])
     
@@ -312,10 +313,15 @@ def split(node, max_depth, min_size, depth):
         # print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
     else:
         node['left'] = get_split(left)
-        single_left = split(node['left'], max_depth, min_size, depth+1)
-        if single_left:
+        if min(node['left']['left_rows'],node['left']['right_rows']) <= min_size:
             node['left'] = to_terminal(left)
-            # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
+            min_left = True
+            # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+        else:
+            single_left = split(node['left'], max_depth, min_size, depth+1)
+            if single_left:
+                node['left'] = to_terminal(left)
+                # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
     
     # process right child
     min_right = False
@@ -326,10 +332,15 @@ def split(node, max_depth, min_size, depth):
         # print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
     else:
         node['right'] = get_split(right)
-        single_right = split(node['right'], max_depth, min_size, depth+1)
-        if single_right:
+        if min(node['right']['left_rows'],node['right']['right_rows']) <= min_size:
             node['right'] = to_terminal(right)
+            min_right = True
             # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+        else:
+            single_right = split(node['right'], max_depth, min_size, depth+1)
+            if single_right:
+                node['right'] = to_terminal(right)
+                # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
     
     if ((single_left and single_right) or (min_left and min_right)) and node['left'][0] == node['right'][0]:
         node['left'] = node['right'] = to_terminal(left + right)
@@ -352,13 +363,22 @@ def build_tree(train, max_depth, min_size):
 
 
 # Print a decision tree
-def print_tree(node, depth=0):
+def print_tree(node, depth=1):
     if isinstance(node, dict):
-        print(f"{depth*'  :  '}[X{node['index']+1} < {node['value']}]")
+        print(f"{(depth-1)*'  │  '}  ├──[X{node['index']+1} < {node['value']}] . . . . . . {node['accuracy'][1]:.2f}% of {node['accuracy'][2]} rows")
         print_tree(node['left'], depth+1)
-        print_tree(node['right'], depth+1)
+        print_tree_right(node['right'], depth+1)
     else:
-        print(f"{depth*'  :  '}[{node[0]}] ... {node[1]:.2f}% of {node[2]} rows")
+        print(f"{(depth-1)*'  │  '}  ├──[{node[0]}] . . . . . . {node[1]:.2f}% of {node[2]} rows")
+
+# Print a decision tree
+def print_tree_right(node, depth):
+    if isinstance(node, dict):
+        print(f"{(depth-1)*'  │  '}  └──[X{node['index']+1} < {node['value']}] . . . . . . {node['accuracy'][1]:.2f}% of {node['accuracy'][2]} rows")
+        print_tree(node['left'], depth+1)
+        print_tree_right(node['right'], depth+1)
+    else:
+        print(f"{(depth-1)*'  │  '}  └──[{node[0]}] . . . . . . {node[1]:.2f}% of {node[2]} rows")
 
 
 # Make a prediction with a decision tree
@@ -384,7 +404,7 @@ def decision_tree(train, test, max_depth, min_size):
     print(f'|   |   |   Building Decision Tree')
     tree = build_tree(train, max_depth, min_size)
     build_time = time.time() - start_time
-    print(f'|   |   |   Building Decision Tree took {build_time/3600:.4f} hours')
+    print(f'|   |   |   Building Decision Tree took {build_time/60:.2f} minutes')
     print()
     print_tree(tree)
     print()
@@ -401,14 +421,14 @@ def decision_tree(train, test, max_depth, min_size):
 
 run_start_time = time.time()
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 100 #500 #40000
+MAX_VOCAB_SIZE = 5000 #40000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 10 #40
-MIN_SIZE = 20
+MAX_DEPTH = 50000
+MIN_SIZE = 50
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
-root_path = "./20news-train-mini"
+root_path = "./20news-train"
 
 # Test CART on Bank Note dataset
 seed(1)
