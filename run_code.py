@@ -245,10 +245,13 @@ def get_split(dataset):
         left = list()
         tmp = [[row[index],row[-1]] for row in list(dataset)]
         right = sorted(tmp, key = operator.itemgetter(0), reverse = True)
+        left.append(right.pop())
+        while (len(right) > MIN_SIZE) and ((len(left) < MIN_SIZE) or (right[-1][0] == left[-1][0])):
+            left.append(right.pop())
         updated = False
         length = len(right)
         for i in range(length):
-            if (len(right) == 0) or (right[0][0] == 0):
+            if (len(right) <= MIN_SIZE) or (right[0][0] == 0):
                 break
             groups = left, right
             gini = gini_index(groups, class_values)
@@ -257,7 +260,7 @@ def get_split(dataset):
                 updated = True
                 b_i = i
             left.append(right.pop())
-            while (len(right) > 0) and (right[-1][0] == left[-1][0]) :
+            while (len(right) > MIN_SIZE) and (right[-1][0] == left[-1][0]) :
                 left.append(right.pop())
         iteration_time = time.time() - iteration_start_time
         ## if updated:
@@ -307,7 +310,7 @@ def split(node, max_depth, min_size, depth):
     # process left child
     min_left = False
     single_left = False
-    if len(left) <= min_size:
+    if len(left) <= 2*min_size:
         node['left'] = to_terminal(left)
         min_left = True
         # print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
@@ -322,11 +325,12 @@ def split(node, max_depth, min_size, depth):
         if single_left:
             node['left'] = to_terminal(left)
             # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
+    left_isleaf = min_left or single_left
     
     # process right child
     min_right = False
     single_right = False
-    if len(right) <= min_size:
+    if len(right) <= 2*min_size:
         node['right'] = to_terminal(right)
         min_right = True
         # print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
@@ -341,8 +345,9 @@ def split(node, max_depth, min_size, depth):
         if single_right:
             node['right'] = to_terminal(right)
             # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+    right_isleaf = min_right or single_right
     
-    if ((single_left and single_right) or (min_left and min_right)) and node['left'][0] == node['right'][0]:
+    if left_isleaf and right_isleaf and node['left'][0] == node['right'][0]:
         node['left'] = node['right'] = to_terminal(left + right)
         return True
     else:
@@ -421,11 +426,11 @@ def decision_tree(train, test, max_depth, min_size):
 
 run_start_time = time.time()
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
-MAX_VOCAB_SIZE = 40000
+MAX_VOCAB_SIZE = 5000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 400000
-MIN_SIZE = 20
+MAX_DEPTH = 50000
+MIN_SIZE = 15
 
 # Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
 root_path = "./20news-train"
