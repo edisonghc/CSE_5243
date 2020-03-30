@@ -313,15 +313,15 @@ def split(node, max_depth, min_size, depth):
         # print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
     else:
         node['left'] = get_split(left)
-        if min(node['left']['left_rows'],node['left']['right_rows']) <= min_size:
+        # if min(node['left']['left_rows'],node['left']['right_rows']) <= min_size:
+        #     node['left'] = to_terminal(left)
+        #     min_left = True
+        #     # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+        # else:
+        single_left = split(node['left'], max_depth, min_size, depth+1)
+        if single_left:
             node['left'] = to_terminal(left)
-            min_left = True
-            # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
-        else:
-            single_left = split(node['left'], max_depth, min_size, depth+1)
-            if single_left:
-                node['left'] = to_terminal(left)
-                # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
+            # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
     
     # process right child
     min_right = False
@@ -332,15 +332,15 @@ def split(node, max_depth, min_size, depth):
         # print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
     else:
         node['right'] = get_split(right)
-        if min(node['right']['left_rows'],node['right']['right_rows']) <= min_size:
+        # if min(node['right']['left_rows'],node['right']['right_rows']) <= min_size:
+        #     node['right'] = to_terminal(right)
+        #     min_right = True
+        #     # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
+        # else:
+        single_right = split(node['right'], max_depth, min_size, depth+1)
+        if single_right:
             node['right'] = to_terminal(right)
-            min_right = True
             # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
-        else:
-            single_right = split(node['right'], max_depth, min_size, depth+1)
-            if single_right:
-                node['right'] = to_terminal(right)
-                # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
     
     if ((single_left and single_right) or (min_left and min_right)) and node['left'][0] == node['right'][0]:
         node['left'] = node['right'] = to_terminal(left + right)
