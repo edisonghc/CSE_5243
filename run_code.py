@@ -249,7 +249,7 @@ def get_split(dataset):
             groups = left, right
             gini = gini_index(groups, class_values)
             if gini < b_score:
-                b_index, b_value, b_score = index, right[-1][-1], gini
+                b_index, b_value, b_score = index, right[-1][0], gini
                 updated = True
                 b_i = i
             left.append(right.pop())
@@ -290,7 +290,7 @@ def split(node, max_depth, min_size, depth):
         print(f"{depth*'  :  '}max_depth ... [{node['right']}]")
         return False
     # process left child
-    single = False
+    single_left = False
     if len(left) <= min_size:
         node['left'] = to_terminal(left)
         print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
@@ -300,13 +300,14 @@ def split(node, max_depth, min_size, depth):
             node['left'] = to_terminal(left)
             print(f"{depth*'  :  '}no good split on left ... [{node['left']}]")
         else:
-            single = split(node['left'], max_depth, min_size, depth+1)
-            if single:
+            single_left = split(node['left'], max_depth, min_size, depth+1)
+            if single_left:
                 node['left'] = to_terminal(left)
                 print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
             else:
                 print(f"{(depth+1)*'  :  '}continue from left")
     # process right child
+    single_right = False
     if len(right) <= min_size:
         node['right'] = to_terminal(right)
         print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
@@ -316,8 +317,8 @@ def split(node, max_depth, min_size, depth):
             node['right'] = to_terminal(right)
             print(f"{depth*'  :  '}no good split on right ... [{node['right']}]")
         else:
-            single = split(node['right'], max_depth, min_size, depth+1)
-            if single:
+            single_right = split(node['right'], max_depth, min_size, depth+1)
+            if single_right:
                 node['right'] = to_terminal(right)
                 print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
             else:
