@@ -215,7 +215,6 @@ def extract_feature(files, vocab, label2id = 0):
                     token_id = vocab.get(token, unk_id)
                     features[doc_id, token_id] += 1
         doc_id += 1
-
     # id2label = dict([(id, label) for label, id in label2id.items()])
     dataset = np.column_stack((features, labels))
     print(f'|   |   |   |   Dataset has dimension {dataset.shape}')
@@ -454,12 +453,12 @@ def decision_tree(train, test, max_depth, min_size):
 MAX_VOCAB_SIZE = 5000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 400000
-MIN_SIZE = 15
-
 # Assuming this file is put under the same parent directoray as the data directory, and the data directory is named "20news-train"
 train_path = "./20news-train"
 test_path = "./20news-test"
+
+MAX_DEPTH = 400000
+MIN_SIZE = 15
 
 # Test CART
 # seed(1)
