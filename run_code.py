@@ -71,8 +71,8 @@ def evaluate_algorithm(root_path, algorithm, *args):
     for i in range(len(folds)):
 
         # A switch to run the algorithm just once for efficiency
-        if i > 0:
-            continue
+        # if i > 0:
+        #   continue
 
         print(f'|   {i+1}th iteration')
         train_set = list()
