@@ -30,6 +30,27 @@ def cross_validation_split(dataset, n_folds):
     return dataset_split
 
 
+# Get list of files
+def load_files(root_path):
+    print(f'|   Reading files from {root_path}')
+    start_time = time.time()
+
+    # Only keep the data dictionaries and ignore possible system files like .DS_Store
+    folders = [os.path.join(root_path, name) for name in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, name))]
+    i = 0
+    list_files = list()
+    for folder in folders:
+        print(f'|   |   {i+1}) Reading data from {folder}')
+        files = [os.path.join(folder, filename) for filename in os.listdir(folder)]
+        i += 1
+        for file in files:
+            list_files.append(file)
+
+    elapsed_time = time.time() - start_time
+    print(f'|   Reading files took {elapsed_time:.2f} seconds')
+    return list_files
+
+
 # Stratified cross-validation split
 def stratified_datasplit(root_path):
     print(f'|   Starting stratified_datasplit')
@@ -90,7 +111,7 @@ def evaluate_algorithm(root_path, algorithm, *args):
         test_data_no_label = test_data_with_label[:,:-1]
         print()
         print(f'|   |   Running {algorithm.__name__}')
-        predicted = algorithm(train_data, test_data_no_label, *args)
+        predicted, _ = algorithm(train_data, test_data_no_label, *args)
         print()
         print(f'|   |   Caculating the accuracy')
         actual = [row[-1] for row in test_data_with_label]
@@ -105,7 +126,7 @@ def evaluate_algorithm(root_path, algorithm, *args):
 
 
 # Vocabulary Construction
-def construct_vocab(files,count_cv):
+def construct_vocab(files,count_cv=0):
     print(f'|   |   |   Constructing vocabulary')
     start_time = time.time()
 
@@ -236,7 +257,7 @@ def gini_index(groups, classes):
 # Select the best split point for a dataset
 def get_split(dataset):
     start_time = time.time()
-    print(f'|   |   |   |   Finding a split')
+    # print(f'|   |   |   |   Finding a split')
     class_values = list(set(row[-1] for row in dataset))
     b_index, b_value, b_score, b_groups = 0, 0, 1, None
     for index in range(len(dataset[0])-1):
@@ -270,7 +291,7 @@ def get_split(dataset):
     n_rows = [len(group) for group in b_groups]
     acc = to_terminal(dataset)
     elapsed_time = time.time() - start_time
-    print(f'|   |   |   |   Finding a split took {elapsed_time:.2f} seconds')
+    # print(f'|   |   |   |   Finding a split took {elapsed_time:.2f} seconds')
     return {'index':b_index, 'value':b_value, 'groups':b_groups, 'left_rows': n_rows[0], 'right_rows': n_rows[1], 'accuracy': acc}
 
 
@@ -411,8 +432,8 @@ def decision_tree(train, test, max_depth, min_size):
     build_time = time.time() - start_time
     print(f'|   |   |   Building Decision Tree took {build_time/60:.2f} minutes')
     print()
-    print_tree(tree)
-    print()
+    # print_tree(tree)
+    # print()
     start_time = time.time()
     print(f'|   |   |   Making predictions')
     predictions = list()
@@ -421,29 +442,57 @@ def decision_tree(train, test, max_depth, min_size):
         predictions.append(prediction)
     predict_time = time.time() - start_time
     print(f'|   |   |   Making predictions took {predict_time:.2f} seconds')
-    return predictions
+    return predictions, tree
 
 
-run_start_time = time.time()
-# The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
+
+# run_start_time = time.time()
+# The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to see what value gives the best performance.
 MAX_VOCAB_SIZE = 5000
 N_FOLDS = 5 #10
 
-MAX_DEPTH = 50000
-MIN_SIZE = 15
+MAX_DEPTH = 400000
+MIN_SIZE = 20
 
-# Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
-root_path = "./20news-train"
+# Assuming this file is put under the same parent directoray as the data directory, and the data directory is named "20news-train"
+train_path = "./20news-train"
+test_path = "./20news-test"
 
 # Test CART on Bank Note dataset
-seed(1)
+# seed(1)
 # evaluate algorithm
 
-scores= evaluate_algorithm(root_path, decision_tree, MAX_DEPTH, MIN_SIZE)
+# scores= evaluate_algorithm(train_path, decision_tree, MAX_DEPTH, MIN_SIZE)
 
-print("Scores:", *(f"{s:.3f}%" for s in scores))
-print('Mean Accuracy: %.3f%%' % (sum(scores)/float(len(scores))))
-print()
-run_time = time.time() - run_start_time
-print(f'The program ran for {run_time/60:.2f} minutes')
-print('Done!')
+# print("Scores:", *(f"{s:.3f}%" for s in scores))
+# print('Mean Accuracy: %.3f%%' % (sum(scores)/float(len(scores))))
+# print()
+# run_time = time.time() - run_start_time
+# print(f'The program ran for {run_time/60:.2f} minutes')
+# print('Done!')
+
+start_time = time.time()
+
+train_set = load_files(train_path)
+test_set = load_files(test_path)
+
+print(f'|   |   Building feature matrix on training data from: {train_path}')
+train_vocab = construct_vocab(train_set)
+train_data, label2id = extract_feature(train_set, train_vocab)
+
+print(f'|   |   Building feature matrix on testing data from: {test_path}')
+test_data_with_label, _ = extract_feature(test_set, train_vocab, label2id)
+test_data_no_label = test_data_with_label[:,:-1]
+
+print(f'|   |   Running decision_tree')
+predicted, tree = decision_tree(train_data, test_data_no_label, MAX_DEPTH, MIN_SIZE)
+
+print(f'|   |   Caculating the accuracy')
+actual = [row[-1] for row in test_data_with_label]
+accuracy = accuracy_metric(actual, predicted)
+print(f'|   |   Accuracy is {accuracy:.2f}%')
+
+print_tree(tree)
+
+elapsed_time = time.time() - start_time
+print(f'Evaluating decision_tree took {elapsed_time/60:.2f} minutes')

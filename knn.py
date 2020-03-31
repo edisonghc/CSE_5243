@@ -50,6 +50,7 @@ def load_files(root_path):
     print(f'|   Reading files took {elapsed_time:.2f} seconds')
     return list_files
 
+
 # Stratified cross-validation split
 def stratified_datasplit(root_path):
     print(f'|   Starting stratified_datasplit')
