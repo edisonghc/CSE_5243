@@ -294,12 +294,12 @@ def k_nearest_neighbors(train, test, num_neighbors):
 
 run_start_time = time.time()
 # The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to see what value gives the best performance.
-MAX_VOCAB_SIZE = 5000
+MAX_VOCAB_SIZE = 40000
 N_FOLDS = 5 #10
-NUM_NEIGHBORS = 10
+NUM_NEIGHBORS = 20
 
 # Assuming this file is put under the same parent directoray as the data directory, and the data directory is named "20news-train"
-train_path = "./20news-train-mini"
+train_path = "./20news-train"
 test_path = "./20news-test"
 
 # Test CART
