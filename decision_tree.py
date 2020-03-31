@@ -48,6 +48,7 @@ def load_files(root_path):
 
     elapsed_time = time.time() - start_time
     print(f'|   Reading files took {elapsed_time:.2f} seconds')
+    print()
     return list_files
 
 
@@ -186,9 +187,11 @@ def extract_feature(files, vocab, label2id = 0):
     doc_id = 0
     if label2id == 0:
         folders = list(set(os.path.dirname(file) for file in files))
-        label2id = dict([(label, id) for id, label in enumerate(folders)])
+        folder_name = [os.path.basename(folder) for folder in folders]
+        label2id = dict([(label, id) for id, label in enumerate(folder_name)])
     for file in files:
-        label = os.path.dirname(file)
+        folder = os.path.dirname(file)
+        label = os.path.basename(folder)
         labels[doc_id] = label2id[label]
         with open(file, 'r', encoding='utf8', errors='ignore') as f:
             for line in f:
@@ -452,13 +455,13 @@ MAX_VOCAB_SIZE = 5000
 N_FOLDS = 5 #10
 
 MAX_DEPTH = 400000
-MIN_SIZE = 20
+MIN_SIZE = 15
 
 # Assuming this file is put under the same parent directoray as the data directory, and the data directory is named "20news-train"
 train_path = "./20news-train"
 test_path = "./20news-test"
 
-# Test CART on Bank Note dataset
+# Test CART
 # seed(1)
 # evaluate algorithm
 

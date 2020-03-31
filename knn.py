@@ -14,6 +14,7 @@ import time
 import numpy as np
 from random import seed
 from random import randrange
+from math import sqrt
 
 
 # Split a dataset into k folds
@@ -48,6 +49,7 @@ def load_files(root_path):
 
     elapsed_time = time.time() - start_time
     print(f'|   Reading files took {elapsed_time:.2f} seconds')
+    print()
     return list_files
 
 
@@ -88,7 +90,7 @@ def evaluate_algorithm(root_path, algorithm, *args):
 
     folds = stratified_datasplit(root_path)
     scores = list()
-    count_cv = 0
+    # count_cv = 0
     for i in range(len(folds)):
 
         # A switch to run the algorithm just once for efficiency
@@ -100,16 +102,22 @@ def evaluate_algorithm(root_path, algorithm, *args):
         for j in range(len(folds)):
             if not i == j:
                 train_set = np.append(train_set, copy.deepcopy(folds[j]))
+
         print(f'|   |   Building feature matrix on training data')
-        train_vocab = construct_vocab(train_set,count_cv)
-        count_cv += 1
+        train_vocab = construct_vocab(train_set)
+        # count_cv += 1
         train_data, label2id = extract_feature(train_set, train_vocab)
+        minmax = dataset_minmax(train_data)
+        normalize_dataset(train_data,minmax)
         print()
+
         test_set = list(folds[i])
         print(f'|   |   Building feature matrix on testing data')
         test_data_with_label, _ = extract_feature(test_set, train_vocab, label2id)
+        normalize_dataset(test_data_with_label,minmax)
         test_data_no_label = test_data_with_label[:,:-1]
         print()
+
         print(f'|   |   Running {algorithm.__name__}')
         predicted = algorithm(train_data, test_data_no_label, *args)
         print()
@@ -171,7 +179,6 @@ def construct_vocab(files,count_cv=0):
     print(f'|   |   |   Constructing vocabulary took {elapsed_time/60:.2f} minutes')
     return vocab
 
-
 def extract_feature(files, vocab, label2id = 0):
     print(f'|   |   |   Extracting feature')
     start_time = time.time()
@@ -186,9 +193,11 @@ def extract_feature(files, vocab, label2id = 0):
     doc_id = 0
     if label2id == 0:
         folders = list(set(os.path.dirname(file) for file in files))
-        label2id = dict([(label, id) for id, label in enumerate(folders)])
+        folder_name = [os.path.basename(folder) for folder in folders]
+        label2id = dict([(label, id) for id, label in enumerate(folder_name)])
     for file in files:
-        label = os.path.dirname(file)
+        folder = os.path.dirname(file)
+        label = os.path.basename(folder)
         labels[doc_id] = label2id[label]
         with open(file, 'r', encoding='utf8', errors='ignore') as f:
             for line in f:
@@ -221,273 +230,85 @@ def extract_feature(files, vocab, label2id = 0):
     return dataset, label2id
 
 
-# Split a dataset based on an attribute and an attribute value
-def test_split(index, value, dataset):
-    left, right = list(), list()
+# Find the min and max values for each column
+def dataset_minmax(dataset):
+    minmax = list()
+    for i in range(len(dataset[0])-1):
+        col_values = [row[i] for row in dataset]
+        value_min = min(col_values)
+        value_max = max(col_values)
+        minmax.append([value_min, value_max])
+    return minmax
+ 
+# Rescale dataset columns to the range 0-1
+def normalize_dataset(dataset, minmax):
     for row in dataset:
-        if row[index] < value:
-            left.append(row)
-        else:
-            right.append(row)
-    return left, right
-
-
-# Calculate the Gini index for a split dataset
-def gini_index(groups, classes):
-    # count all samples at split point
-    n_instances = float(sum([len(group) for group in groups]))
-    # sum weighted Gini index for each group
-    gini = 0.0
-    for group in groups:
-        size = float(len(group))
-        # avoid divide by zero
-        if size == 0:
-            continue
-        score = 0.0
-        # score the group based on the score for each class
-        tmp = [row[-1] for row in group]
-        for class_val in classes:
-            p = tmp.count(class_val) / size
-            score += p * p
-        # weight the group score by its relative size
-        gini += (1.0 - score) * (size / n_instances)
-    return gini
-
-
-# Select the best split point for a dataset
-def get_split(dataset):
+        for i in range(len(row)-1):
+            row[i] = (row[i] - minmax[i][0]) / (minmax[i][1] - minmax[i][0])
+ 
+ 
+# Calculate the Euclidean distance between two vectors
+def euclidean_distance(row1, row2):
+    distance = 0.0
+    for i in range(len(row1)-1):
+        distance += (row1[i] - row2[i])**2
+    return sqrt(distance)
+ 
+# Locate the most similar neighbors
+def get_neighbors(train, test_row, num_neighbors):
+    distances = list()
+    for train_row in train:
+        dist = euclidean_distance(test_row, train_row)
+        distances.append((train_row, dist))
+    distances.sort(key=lambda tup: tup[1])
+    neighbors = list()
+    for i in range(num_neighbors):
+        neighbors.append(distances[i][0])
+    return neighbors
+ 
+# Make a prediction with neighbors
+def predict_classification(train, test_row, num_neighbors):
+    neighbors = get_neighbors(train, test_row, num_neighbors)
+    output_values = [row[-1] for row in neighbors]
+    prediction = max(set(output_values), key=output_values.count)
+    return prediction
+ 
+# kNN Algorithm
+def k_nearest_neighbors(train, test, num_neighbors):
     start_time = time.time()
-    print(f'|   |   |   |   Finding a split')
-    class_values = list(set(row[-1] for row in dataset))
-    b_index, b_value, b_score, b_groups = 0, 0, 1, None
-    for index in range(len(dataset[0])-1):
-        iteration_start_time = time.time()
-        # print(f'|   |   |   |   |   {index+1}th attribute')
-        left = list()
-        tmp = [[row[index],row[-1]] for row in list(dataset)]
-        right = sorted(tmp, key = operator.itemgetter(0), reverse = True)
-        updated = False
-        length = len(right)
-        for i in range(length):
-            if (len(right) == 0) or (right[0][0] == 0):
-                break
-            groups = left, right
-            gini = gini_index(groups, class_values)
-            if gini < b_score:
-                b_index, b_value, b_score = index, right[-1][0]-0.5, gini
-                updated = True
-                b_i = i
-            left.append(right.pop())
-            while (len(right) > 0) and (right[-1][0] == left[-1][0]) :
-                left.append(right.pop())
-        iteration_time = time.time() - iteration_start_time
-        ## if updated:
-            ## print(f"|   |   |   |   |   Best Gini = {b_score:.6f} at {index+1}th attribute {str(b_i)}th row")
-        # print(f"|   |   |   |   |   |   Spent {iteration_time:.0f} seconds, Best Gini = {b_score:.6f} at {index+1}th attribute{(' '+str(b_i)+'th row') if updated else ', did not change'}")
-    b_groups = test_split(b_index,b_value,dataset)
-    n_rows = [len(group) for group in b_groups]
-    acc = to_terminal(dataset)
-    elapsed_time = time.time() - start_time
-    print(f'|   |   |   |   Finding a split took {elapsed_time:.2f} seconds')
-    return {'index':b_index, 'value':b_value, 'groups':b_groups, 'left_rows': n_rows[0], 'right_rows': n_rows[1], 'accuracy': acc}
-
-
-# Create a terminal node value
-def to_terminal(group):
-    outcomes = [row[-1] for row in group]
-    tmp = [max(set(outcomes), key=outcomes.count)]
-    predicted = tmp * len(group)
-    accuracy = accuracy_metric(outcomes, predicted)
-    return [tmp[0], accuracy, len(group)]
-
-
-# Create child splits for a node or make terminal
-def split(node, max_depth, min_size, depth):
-    # print(f"{(depth-1)*'  :  '}[X{node['index']+1} < {node['value']}]") 
-    left, right = node['groups']
-    del(node['groups'])
-    
-    # check for a no split
-    if not left or not right:
-        node['left'] = node['right'] = to_terminal(left + right)
-        # print(f"{depth*'  :  '}single root ... [{node['left']}]")
-        return True
-    
-    # check for max depth
-    if depth >= max_depth:
-        node['left'] = to_terminal(left)
-        # print(f"{depth*'  :  '}max_depth ... [{node['left']}]")
-        node['right'] = to_terminal(right)
-        # print(f"{depth*'  :  '}max_depth ... [{node['right']}]")
-        if node['left'][0] == node['right'][0]:
-            node['left'] = node['right'] = to_terminal(left + right)
-            return True
-        else:
-            return False
-    
-    # process left child
-    min_left = False
-    single_left = False
-    if len(left) <= min_size:
-        node['left'] = to_terminal(left)
-        min_left = True
-        # print(f"{depth*'  :  '}min_size on left... [{node['left']}]")
-    else:
-        node['left'] = get_split(left)
-        # if min(node['left']['left_rows'],node['left']['right_rows']) <= min_size:
-        #     node['left'] = to_terminal(left)
-        #     min_left = True
-        #     # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
-        # else:
-        single_left = split(node['left'], max_depth, min_size, depth+1)
-        if single_left:
-            node['left'] = to_terminal(left)
-            # print(f"{(depth+1)*'  :  '}single left ... [{node['left']}]")
-    
-    # process right child
-    min_right = False
-    single_right = False
-    if len(right) <= min_size:
-        node['right'] = to_terminal(right)
-        min_right = True
-        # print(f"{depth*'  :  '}min_size on right ... [{node['right']}]")
-    else:
-        node['right'] = get_split(right)
-        # if min(node['right']['left_rows'],node['right']['right_rows']) <= min_size:
-        #     node['right'] = to_terminal(right)
-        #     min_right = True
-        #     # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
-        # else:
-        single_right = split(node['right'], max_depth, min_size, depth+1)
-        if single_right:
-            node['right'] = to_terminal(right)
-            # print(f"{(depth+1)*'  :  '}single right ... [{node['right']}]")
-    
-    if ((single_left and single_right) or (min_left and min_right)) and node['left'][0] == node['right'][0]:
-        node['left'] = node['right'] = to_terminal(left + right)
-        return True
-    else:
-        return False
-
-
-# Build a decision tree
-def build_tree(train, max_depth, min_size):
-    root = get_split(train)
-    single = False
-    if root['value'] == 0:
-        root = to_terminal(train)
-    else:
-        single = split(root, max_depth, min_size, 1)
-        if single:
-            root = to_terminal(train)
-    return root
-
-
-# Print a decision tree
-def print_tree(node, depth=1):
-    if isinstance(node, dict):
-        print(f"{(depth-1)*'  │  '}  ├──[X{node['index']+1} < {node['value']}] . . . . . . {node['accuracy'][1]:.2f}% of {node['accuracy'][2]} rows")
-        print_tree(node['left'], depth+1)
-        print_tree_right(node['right'], depth+1)
-    else:
-        print(f"{(depth-1)*'  │  '}  ├──[{node[0]}] . . . . . . {node[1]:.2f}% of {node[2]} rows")
-
-# Print a decision tree
-def print_tree_right(node, depth):
-    if isinstance(node, dict):
-        print(f"{(depth-1)*'  │  '}  └──[X{node['index']+1} < {node['value']}] . . . . . . {node['accuracy'][1]:.2f}% of {node['accuracy'][2]} rows")
-        print_tree(node['left'], depth+1)
-        print_tree_right(node['right'], depth+1)
-    else:
-        print(f"{(depth-1)*'  │  '}  └──[{node[0]}] . . . . . . {node[1]:.2f}% of {node[2]} rows")
-
-
-# Make a prediction with a decision tree
-def predict(node, row):
-    if not isinstance(node, dict):
-        return node[0]
-    else: 
-        if row[node['index']] < node['value']:
-            if isinstance(node['left'], dict):
-                return predict(node['left'], row)
-            else:
-                return node['left'][0]
-        else:
-            if isinstance(node['right'], dict):
-                return predict(node['right'], row)
-            else:
-                return node['right'][0]
+    print(f'|   |   |   Running KNN')
+    predictions = list()
+    i = 0
+    for row in test:
+        print(f'|   |   |   |   Predicting class for {i}th row')
+        predic_start_time = time.time()
+        output = predict_classification(train, row, num_neighbors)
+        predic_time = time.time() - predic_start_time
+        print(f'|   |   |   |   |   Predicting class took {predic_time:.2f} seconds')
+        predictions.append(output)
+        i += 1
+    run_time = time.time() - start_time
+    print(f'|   |   |   Running KNN took {run_time/60:.2f} minutes')
+    return(predictions)
  
 
-# Classification and Regression Tree Algorithm
-def decision_tree(train, test, max_depth, min_size):
-    start_time = time.time()
-    print(f'|   |   |   Building Decision Tree')
-    tree = build_tree(train, max_depth, min_size)
-    build_time = time.time() - start_time
-    print(f'|   |   |   Building Decision Tree took {build_time/60:.2f} minutes')
-    print()
-    print_tree(tree)
-    print()
-    start_time = time.time()
-    print(f'|   |   |   Making predictions')
-    predictions = list()
-    for row in test:
-        prediction = predict(tree, row)
-        predictions.append(prediction)
-    predict_time = time.time() - start_time
-    print(f'|   |   |   Making predictions took {predict_time:.2f} seconds')
-    return predictions
-
-
-# Evaluate an algorithm using a cross validation split
-def evaluate_algorithm_testset(train_path, test_path, algorithm, *args):
-    print(f'Evaluating {algorithm.__name__}')
-    start_time = time.time()
-
-    train_set = load_files(train_path)
-    test_set = load_files(test_path)
-
-    print(f'|   |   Building feature matrix on training data from: {train_path}')
-    train_vocab = construct_vocab(train_set)
-    train_data, label2id = extract_feature(train_set, train_vocab)
-
-    print(f'|   |   Building feature matrix on testing data from: {test_path}')
-    test_data_with_label, _ = extract_feature(test_set, train_vocab, label2id)
-    test_data_no_label = test_data_with_label[:,:-1]
-
-    print(f'|   |   Running {algorithm.__name__}')
-    predicted = algorithm(train_data, test_data_no_label, *args)
-
-    print(f'|   |   Caculating the accuracy')
-    actual = [row[-1] for row in test_data_with_label]
-    accuracy = accuracy_metric(actual, predicted)
-    print(f'|   |   Accuracy is {accuracy:.2f}%')
-
-    elapsed_time = time.time() - start_time
-    print(f'Evaluating {algorithm.__name__} took {elapsed_time/60:.2f} minutes')
-
-    return accuracy
-
-
 run_start_time = time.time()
-# The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to        see what value gives the best performance.
+# The maximum size of the final vocabulary. It's a hyper-parameter. You can change it to see what value gives the best performance.
 MAX_VOCAB_SIZE = 5000
 N_FOLDS = 5 #10
+NUM_NEIGHBORS = 10
 
-MAX_DEPTH = 400000
-MIN_SIZE = 20
-
-# Assuming this file is put under the same parent directoray as the data directory, and the     data directory is named "20news-train"
-root_path = "./20news-train"
+# Assuming this file is put under the same parent directoray as the data directory, and the data directory is named "20news-train"
+train_path = "./20news-train-mini"
 test_path = "./20news-test"
 
-# Test CART on Bank Note dataset
+# Test CART
 seed(1)
 # evaluate algorithm
 
-# scores= evaluate_algorithm(root_path, decision_tree, MAX_DEPTH, MIN_SIZE)
-scores= evaluate_algorithm(root_path, decision_tree, MAX_DEPTH, MIN_SIZE)
+scores = evaluate_algorithm(train_path, k_nearest_neighbors, NUM_NEIGHBORS)
+print('Scores: %s' % scores)
+print('Mean Accuracy: %.3f%%' % (sum(scores)/float(len(scores))))
 
 print("Scores:", *(f"{s:.3f}%" for s in scores))
 print('Mean Accuracy: %.3f%%' % (sum(scores)/float(len(scores))))
@@ -495,3 +316,31 @@ print()
 run_time = time.time() - run_start_time
 print(f'The program ran for {run_time/60:.2f} minutes')
 print('Done!')
+
+
+
+# start_time = time.time()
+
+# train_set = load_files(train_path)
+# test_set = load_files(test_path)
+
+# print(f'|   |   Building feature matrix on training data from: {train_path}')
+# train_vocab = construct_vocab(train_set)
+# train_data, label2id = extract_feature(train_set, train_vocab)
+
+# print(f'|   |   Building feature matrix on testing data from: {test_path}')
+# test_data_with_label, _ = extract_feature(test_set, train_vocab, label2id)
+# test_data_no_label = test_data_with_label[:,:-1]
+
+# print(f'|   |   Running decision_tree')
+# predicted, tree = decision_tree(train_data, test_data_no_label, MAX_DEPTH, MIN_SIZE)
+
+# print(f'|   |   Caculating the accuracy')
+# actual = [row[-1] for row in test_data_with_label]
+# accuracy = accuracy_metric(actual, predicted)
+# print(f'|   |   Accuracy is {accuracy:.2f}%')
+
+# print_tree(tree)
+
+# elapsed_time = time.time() - start_time
+# print(f'Evaluating decision_tree took {elapsed_time/60:.2f} minutes')
